@@ -1,0 +1,176 @@
+#--------------------start-------------------------------
+# Get current working directory
+getwd()
+#----------------read dataset--------------------------
+data <- read.csv("C://Users//ASUS//Downloads//data_for_analysis.csv")
+data$outcome <- as.factor(data$outcome)
+summary(data)
+# testing for normality of distribution
+shapiro.test(data$antioxidant1)
+shapiro.test(data$antioxidant2)
+
+hist(data$antioxidant1)
+qqnorm(data$antioxidant1)
+
+#-------------------Permutation Spearman function (NO warnings, NO packages)-------------------
+perm_spearman_test <- function(x, y, R=10000) {
+  obs_cor <- cor(x, y, method = "spearman")
+  null_dist <- replicate(R, cor(sample(x), y, method = "spearman"))
+  p_val <- mean(abs(null_dist) >= abs(obs_cor))
+  list(Observed = obs_cor, p.value = p_val)
+}
+
+# data.frame for result
+results <- data.frame(
+  variable = character(),
+  spearman_corr = numeric(),
+  s_p_value = numeric(),
+  stringsAsFactors = FALSE
+)
+
+# variables for analysis
+target_vars <- c("antioxidant2", "antioxidant3", "antioxidant4")
+
+# main loop for antioxidant1 vs others
+for (var in target_vars) {
+  perm_spearman <- perm_spearman_test(
+    x = data$antioxidant1,
+    y = data[[var]]
+  )
+  
+  results <- rbind(results, data.frame(
+    variable = var,
+    spearman_corr = perm_spearman$Observed,
+    s_p_value = perm_spearman$p.value
+  ))
+}
+
+# Add ALL pairwise correlations (FIXED)
+# antioxidant2 vs antioxidant3
+perm_spearman <- perm_spearman_test(data$antioxidant2, data$antioxidant3)
+results <- rbind(results, data.frame(variable="antioxidant2 vs antioxidant3", spearman_corr=perm_spearman$Observed, s_p_value=perm_spearman$p.value))
+
+# antioxidant2 vs antioxidant4
+perm_spearman <- perm_spearman_test(data$antioxidant2, data$antioxidant4)
+results <- rbind(results, data.frame(variable="antioxidant2 vs antioxidant4", spearman_corr=perm_spearman$Observed, s_p_value=perm_spearman$p.value))
+
+# antioxidant3 vs antioxidant4
+perm_spearman <- perm_spearman_test(data$antioxidant3, data$antioxidant4)
+results <- rbind(results, data.frame(variable="antioxidant3 vs antioxidant4", spearman_corr=perm_spearman$Observed, s_p_value=perm_spearman$p.value))
+
+# output result
+print(results)
+
+#------visualization of significant results of correlation analysis (p<0.05 only)---------
+sig_results <- results[results$s_p_value < 0.05, ]
+if(nrow(sig_results) > 0){
+  for(i in 1:nrow(sig_results)){
+    var_pair <- as.character(sig_results$variable[i])
+    v <- strsplit(var_pair, " vs ")[[1]]
+    if(length(v) == 1){
+      v1 <- "antioxidant1"
+      v2 <- v
+    } else {
+      v1 <- v[1]
+      v2 <- v[2]
+    }
+    data_plot <- data[order(data[[v2]]), ]
+    plot(data_plot[[v2]], data_plot[[v1]], xlab=v2, ylab=v1)
+    abline(lm(data_plot[[v1]] ~ data_plot[[v2]]), col="red")
+  }
+} else {
+  data<-data[order(data$antioxidant2),]
+  plot(data$antioxidant2, data$antioxidant1)
+  lines(data$antioxidant2, data$antioxidant1, col = "blue")
+  abline(lm(data$antioxidant1 ~ data$antioxidant2), col="red")
+}
+
+
+#_____________regression analysis________________
+
+df=data
+df<-df[order(df$antioxidant1),]
+
+
+#linear regression
+
+model_linear <- lm(antioxidant1 ~ antioxidant2, data=df)
+summary(model_linear)
+
+
+#second degree polynomal
+
+model_2 <- lm(antioxidant1 ~ poly(antioxidant2, 2), data=df)
+summary(model_2)
+
+#third degree polynomal
+
+model_3 <- lm(antioxidant1 ~ poly(antioxidant2, 3), data=df)
+
+summary(model_3)
+#exponential dependence
+
+model_exp <- lm(log(antioxidant1) ~ antioxidant2, data=df)
+summary(model_exp)
+# log dependence
+
+model_log <- lm(antioxidant1 ~ log(antioxidant2), data=df)
+summary(model_log)
+#comparison of models
+#table of result
+
+rezult<-data.frame(model=c("model_linear", "model_2", "model_3", "model_exp", "model_log"), BIC_value=c(BIC(model_linear), BIC(model_2), BIC(model_3), BIC(model_exp), BIC(model_log)))
+
+rezult<-rezult[order(rezult$BIC_value),]
+
+rezult
+
+
+# __________building graphs______________
+# linear regression graphs
+
+plot(df$antioxidant2, df$antioxidant1)
+lines(df$antioxidant2, fitted(model_linear), col="blue")
+
+
+# Logistic regression
+# Dependent variable: outcome
+sum(is.na(data$outcome))
+data <- data[!is.na(data$outcome), ]
+# Example: Predicting outcome based on antioxidant1 and antioxidant2
+
+# Simple model with one predictor
+model_logit_1 <- glm(outcome ~ antioxidant1, data = data, family = binomial)
+summary(model_logit_1)
+
+# Multi-predictor model
+model_logit_2 <- glm(outcome ~ antioxidant1 + antioxidant2, data = data, family = binomial)
+summary(model_logit_2)
+
+# Model with all variables lipids
+model_logit_all <- glm(outcome ~ antioxidant1 + antioxidant2 + antioxidant3 + antioxidant4,
+                       data = data, family = binomial)
+summary(model_logit_all)
+
+
+# Predicting probabilities for new data (example)
+data$pred_prob <- predict(model_logit_2, type = "response")
+
+# Classification by threshold 0.5
+data$pred_class <- ifelse(data$pred_prob > 0.5, 1, 0)
+
+# confusion matrix
+table(Actual = data$outcome, Predicted = data$pred_class)
+
+# Model Quality Assessment: ROC Curve and AUC
+if (!require(pROC)) install.packages("pROC")
+library(pROC)
+roc_curve <- roc(data$outcome, data$pred_prob)
+plot(roc_curve, main = "ROC-Curve")
+auc(roc_curve)
+
+# Stepwise variable selection (AIC)
+step_model <- step(model_logit_all, direction = "both")
+summary(step_model)
+#Coefficient interpretation
+exp(cbind(OR = coef(model_logit_2), confint(model_logit_2)))
